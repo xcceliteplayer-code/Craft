@@ -715,7 +715,7 @@ document.addEventListener('keyup', e => { keys[e.code] = false; });
 
 document.addEventListener('mousemove', e => {
   if (!locked) return;
-  player.yaw   += e.movementX * 0.002;
+  player.yaw   -= e.movementX * 0.002;
   player.pitch -= e.movementY * 0.002;
   player.pitch = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, player.pitch));
 });
