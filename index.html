@@ -221,7 +221,7 @@ body{background:#000;overflow:hidden;font-family:'Courier New',monospace;user-se
 
 <script>
 // ========================================================
-// MINECRAFT JAVA EDITION — Web Clone (FIXED)
+// MINECRAFT JAVA EDITION — Full Web Clone
 // ========================================================
 
 // --- SETTINGS ---
@@ -242,8 +242,6 @@ const gl=canvas.getContext('webgl')||canvas.getContext('experimental-webgl');
 // --- CONSTANTS ---
 const CHUNK_SIZE=16,WORLD_HEIGHT=64;
 let CHUNK_RENDER_DIST=4;
-// FIX: increased chunk unload distance so far chunks get cleaned up
-const CHUNK_UNLOAD_DIST=8;
 const GRAVITY=-28,JUMP_VEL=9,PLAYER_SPEED=5,FLY_SPEED=12;
 
 const BLOCK_DATA={
@@ -366,15 +364,14 @@ function buildMesh(cx,cz){
   function up(k,vd,cd,ld){
     const old=chunkMeshes.get(k);
     if(old){gl.deleteBuffer(old.vbo);gl.deleteBuffer(old.cbo);if(old.lbo)gl.deleteBuffer(old.lbo);}
-    if(!vd.length){chunkMeshes.delete(k);return;}
     const vbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vbo);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vd),gl.STATIC_DRAW);
     const cbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,cbo);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(cd),gl.STATIC_DRAW);
-    let lbo=null;if(ld&&ld.length){lbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,lbo);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(ld),gl.STATIC_DRAW);}
+    let lbo=null;if(ld){lbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,lbo);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(ld),gl.STATIC_DRAW);}
     chunkMeshes.set(k,{vbo,cbo,lbo,count:vd.length/3});
   }
-  up(key,v,c,l);
+  if(v.length)up(key,v,c,l);
   const wk=key+'_w';
-  if(wv.length)up(wk,wv,wc,null);else{const old=chunkMeshes.get(wk);if(old){gl.deleteBuffer(old.vbo);gl.deleteBuffer(old.cbo);chunkMeshes.delete(wk);}}
+  if(wv.length)up(wk,wv,wc,null);else chunkMeshes.delete(wk);
 }
 
 // --- PLAYER ---
@@ -407,8 +404,6 @@ document.addEventListener('mousemove',e=>{
   player.pitch+=(settings.invertMouse?1:-1)*e.movementY*sens;
   player.pitch=Math.max(-Math.PI/2+.01,Math.min(Math.PI/2-.01,player.pitch));
 });
-
-// FIX: prevent duplicate game start — canvas click only locks pointer, startLoading guards against double call
 canvas.addEventListener('mousedown',e=>{
   if(currentScreen!=='game')return;
   if(!locked){canvas.requestPointerLock();return;}
@@ -472,29 +467,25 @@ let bobT=0;
 
 function physics(dt){
   if(player.flying){
-    // FIX: use renamed variables to avoid shadow conflict with outer scope
-    const vd=viewDir();
-    const rx=Math.cos(player.yaw),rz=-Math.sin(player.yaw);
+    const d=viewDir(),r=[Math.cos(player.yaw),0,-Math.sin(player.yaw)];
     let mx=0,my=0,mz=0;
-    if(keys[settings.keybinds.forward]){mx+=vd[0];mz+=vd[2];}if(keys[settings.keybinds.back]){mx-=vd[0];mz-=vd[2];}
-    if(keys[settings.keybinds.left]){mx-=rx;mz-=rz;}if(keys[settings.keybinds.right]){mx+=rx;mz+=rz;}
+    if(keys[settings.keybinds.forward]){mx+=d[0];mz+=d[2];}if(keys[settings.keybinds.back]){mx-=d[0];mz-=d[2];}
+    if(keys[settings.keybinds.left]){mx-=r[0];mz-=r[2];}if(keys[settings.keybinds.right]){mx+=r[0];mz+=r[2];}
     if(keys[settings.keybinds.jump])my+=1;if(keys[settings.keybinds.sneak])my-=1;
-    const ml=Math.sqrt(mx*mx+my*my+mz*mz);if(ml){mx/=ml;my/=ml;mz/=ml;}
+    const l=Math.sqrt(mx*mx+my*my+mz*mz);if(l){mx/=l;my/=l;mz/=l;}
     player.x+=mx*FLY_SPEED*dt;player.y+=my*FLY_SPEED*dt;player.z+=mz*FLY_SPEED*dt;
     player.vx=player.vy=player.vz=0;return;
   }
   player.vy+=GRAVITY*dt;
-  // FIX: use unambiguous variable names for right/forward vectors
-  const rx=Math.cos(player.yaw),rz=-Math.sin(player.yaw);
-  const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw);
+  const r=[Math.cos(player.yaw),0,-Math.sin(player.yaw)],f=[-Math.sin(player.yaw),0,-Math.cos(player.yaw)];
   let mx=0,mz=0;
-  if(keys[settings.keybinds.forward]){mx+=fx;mz+=fz;}if(keys[settings.keybinds.back]){mx-=fx;mz-=fz;}
-  if(keys[settings.keybinds.left]){mx-=rx;mz-=rz;}if(keys[settings.keybinds.right]){mx+=rx;mz+=rz;}
-  const ml=Math.sqrt(mx*mx+mz*mz);if(ml){mx/=ml;mz/=ml;}
-  const sp=keys[settings.keybinds.sprint]?1.6:1,snk=keys[settings.keybinds.sneak]?.4:1;
-  player.vx=mx*PLAYER_SPEED*sp*snk;player.vz=mz*PLAYER_SPEED*sp*snk;
+  if(keys[settings.keybinds.forward]){mx+=f[0];mz+=f[2];}if(keys[settings.keybinds.back]){mx-=f[0];mz-=f[2];}
+  if(keys[settings.keybinds.left]){mx-=r[0];mz-=r[2];}if(keys[settings.keybinds.right]){mx+=r[0];mz+=r[2];}
+  const l=Math.sqrt(mx*mx+mz*mz);if(l){mx/=l;mz/=l;}
+  const sp=keys[settings.keybinds.sprint]?1.6:1,sn=keys[settings.keybinds.sneak]?.4:1;
+  player.vx=mx*PLAYER_SPEED*sp*sn;player.vz=mz*PLAYER_SPEED*sp*sn;
   if(keys[settings.keybinds.jump]&&player.onGround)player.vy=JUMP_VEL;
-  if(settings.viewBobbing&&player.onGround&&ml)bobT+=dt*10;
+  if(settings.viewBobbing&&player.onGround&&l)bobT+=dt*10;
   const hw=player.width/2;
   player.x+=player.vx*dt;
   for(let dy=0;dy<2;dy++){
@@ -538,29 +529,12 @@ function sky(dt){
 
 // --- RENDER ---
 const PROJ=m4();
-
-// FIX: Rewrote buildMVP() to avoid variable shadowing (cy was both cos(yaw) and player coord)
 function buildMVP(){
-  const sinY=Math.sin(player.yaw),cosY=Math.cos(player.yaw);
-  const sinP=Math.sin(player.pitch),cosP=Math.cos(player.pitch);
+  const sy=Math.sin(player.yaw),cy=Math.cos(player.yaw),sp=Math.sin(player.pitch),cp=Math.cos(player.pitch);
   const bob=settings.viewBobbing?Math.sin(bobT)*.05:0;
-  const ex=player.x,ey=player.y+player.eyeHeight+bob,ez=player.z;
-
-  // Build view matrix manually (column-major)
-  const view=new Float32Array(16);
-  // Right vector: (cosY, sinY*sinP, sinY*cosP)
-  // Up vector:    (0,    cosP,      -sinP)
-  // Back vector:  (-sinY, cosY*sinP, cosY*cosP)
-  view[0]=cosY;   view[4]=0;    view[8]=-sinY;  view[12]=0;
-  view[1]=sinY*sinP; view[5]=cosP; view[9]=cosY*sinP; view[13]=0;
-  view[2]=sinY*cosP; view[6]=-sinP; view[10]=cosY*cosP; view[14]=0;
-  view[3]=0;      view[7]=0;    view[11]=0;     view[15]=1;
-  // Translation: -(R·eye, U·eye, B·eye)
-  view[12]=-(view[0]*ex+view[1]*ey+view[2]*ez);
-  view[13]=-(view[4]*ex+view[5]*ey+view[6]*ez);
-  view[14]=-(view[8]*ex+view[9]*ey+view[10]*ez);
-  view[15]=1;
-
+  const cx=player.x,cy2=player.y+player.eyeHeight+bob,cz=player.z;
+  const view=new Float32Array([cy,sy*sp,sy*cp,0,0,cp,-sp,0,-sy,cy*sp,cy*cp,0,0,0,0,1]);
+  view[12]=-(view[0]*cx+view[4]*cy2+view[8]*cz);view[13]=-(view[1]*cx+view[5]*cy2+view[9]*cz);view[14]=-(view[2]*cx+view[6]*cy2+view[10]*cz);view[15]=1;
   const mvp=m4();mul(mvp,PROJ,view);return mvp;
 }
 
@@ -583,55 +557,23 @@ function renderWorld(mvp,fc,fog,t){
   for(let dx=-CHUNK_RENDER_DIST;dx<=CHUNK_RENDER_DIST;dx++)for(let dz=-CHUNK_RENDER_DIST;dz<=CHUNK_RENDER_DIST;dz++){const m=chunkMeshes.get(ckey(pcx+dx,pcz+dz)+'_w');if(m&&m.count)drawMesh(m,WP,mvp,fc,fog,t);}
   gl.disable(gl.BLEND);
   const h=raycast();const b=h.hit?getBlock(h.x,h.y,h.z):0;
-  document.getElementById('debug-hud').innerHTML=`X:${player.x.toFixed(1)} Y:${player.y.toFixed(1)} Z:${player.z.toFixed(1)}<br>FPS:${fps} | Chunk:${pcx},${pcz}<br>Lihat:${BLOCK_DATA[b]?.name||'udara'}<br>${player.flying?'✈Terbang':player.onGround?'🟢Tanah':'↑Udara'} | Waktu:${Math.floor(tod*24)}:00<br>Chunks loaded:${chunks.size} | Meshes:${chunkMeshes.size}`;
+  document.getElementById('debug-hud').innerHTML=`X:${player.x.toFixed(1)} Y:${player.y.toFixed(1)} Z:${player.z.toFixed(1)}<br>FPS:${fps} | Chunk:${pcx},${pcz}<br>Lihat:${BLOCK_DATA[b]?.name||'udara'}<br>${player.flying?'✈Terbang':player.onGround?'🟢Tanah':'↑Udara'} | Waktu:${Math.floor(tod*24)}:00`;
 }
 
-// FIX: manageChunks now rebuilds up to 4 dirty chunks per frame (was 2) and
-//      unloads far chunks to prevent memory leak
 function manageChunks(){
   const pcx=Math.floor(player.x/CHUNK_SIZE),pcz=Math.floor(player.z/CHUNK_SIZE);
-
-  // Generate missing nearby chunks
-  for(let dx=-CHUNK_RENDER_DIST-1;dx<=CHUNK_RENDER_DIST+1;dx++)
-    for(let dz=-CHUNK_RENDER_DIST-1;dz<=CHUNK_RENDER_DIST+1;dz++)
-      if(!chunks.has(ckey(pcx+dx,pcz+dz)))genChunk(pcx+dx,pcz+dz);
-
-  // FIX: Unload chunks that are too far away (prevents memory leak)
-  for(const key of chunks.keys()){
-    const[cx,cz]=key.split(',').map(Number);
-    if(Math.abs(cx-pcx)>CHUNK_UNLOAD_DIST||Math.abs(cz-pcz)>CHUNK_UNLOAD_DIST){
-      chunks.delete(key);
-      // Clean up GPU buffers for unloaded chunk
-      const mesh=chunkMeshes.get(key);
-      if(mesh){gl.deleteBuffer(mesh.vbo);gl.deleteBuffer(mesh.cbo);if(mesh.lbo)gl.deleteBuffer(mesh.lbo);chunkMeshes.delete(key);}
-      const wmesh=chunkMeshes.get(key+'_w');
-      if(wmesh){gl.deleteBuffer(wmesh.vbo);gl.deleteBuffer(wmesh.cbo);chunkMeshes.delete(key+'_w');}
-      dirtyChunks.delete(key);
-    }
-  }
-
-  // FIX: Rebuild up to 4 dirty chunks per frame instead of 2 for smoother loading
-  let rebuilt=0;
-  for(const k of dirtyChunks){
-    if(rebuilt>=4)break;
-    const[cx,cz]=k.split(',').map(Number);
-    // Only rebuild if chunk data exists
-    if(chunks.has(k)){buildMesh(cx,cz);rebuilt++;}
-    dirtyChunks.delete(k);
-  }
+  for(let dx=-CHUNK_RENDER_DIST-1;dx<=CHUNK_RENDER_DIST+1;dx++)for(let dz=-CHUNK_RENDER_DIST-1;dz<=CHUNK_RENDER_DIST+1;dz++)if(!chunks.has(ckey(pcx+dx,pcz+dz)))genChunk(pcx+dx,pcz+dz);
+  let b=0;for(const k of dirtyChunks){if(b>=2)break;const[cx,cz]=k.split(',').map(Number);buildMesh(cx,cz);dirtyChunks.delete(k);b++;}
 }
 
 // --- MAIN LOOP ---
 let lastT=0,fps=0,fpsC=0,fpsT=0,gT=0;
-// FIX: loopId guard prevents duplicate requestAnimationFrame loops
-let loopId=null;
-
 function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;gl.viewport(0,0,canvas.width,canvas.height);persp(PROJ,Math.PI/3,canvas.width/canvas.height,.1,300);}
 window.addEventListener('resize',resize);resize();
 
 function gameLoop(now){
   if(!gameRunning)return;
-  loopId=requestAnimationFrame(gameLoop);
+  requestAnimationFrame(gameLoop);
   const dt=Math.min((now-lastT)/1000,.05);lastT=now;gT+=dt;
   fpsC++;fpsT+=dt;if(fpsT>=.5){fps=Math.round(fpsC/fpsT);fpsC=0;fpsT=0;}
   if(currentScreen!=='game')return;
@@ -717,12 +659,7 @@ function showScreen(name){
   if(name==='inventory'){renderInvUI();}
 }
 function resumeGame(){showScreen('game');if(gameRunning)canvas.requestPointerLock();}
-function stopGame(){
-  gameRunning=false;locked=false;
-  // FIX: cancel the animation frame to fully stop the loop
-  if(loopId){cancelAnimationFrame(loopId);loopId=null;}
-  document.exitPointerLock();
-}
+function stopGame(){gameRunning=false;locked=false;document.exitPointerLock();}
 
 // --- SETTINGS SYSTEM ---
 const TABS={
@@ -755,22 +692,39 @@ ${[['masterVolume','Master Volume'],['musicVolume','Music'],['sfxVolume','Sound 
 <div class="setting-row"><div class="setting-label">${label}</div><div class="setting-control"><input class="setting-slider" type="range" min="0" max="100" value="${settings[k]}" oninput="settings['${k}']=+this.value;this.nextElementSibling.textContent=this.value+'%'"><span class="setting-value">${settings[k]}%</span></div></div>`).join('')}
 <div class="setting-row"><div class="setting-label">Ambient</div><div class="setting-control"><input class="setting-slider" type="range" min="0" max="100" value="100"><span class="setting-value">100%</span></div></div>
 <div class="setting-row"><div class="setting-label">Blok</div><div class="setting-control"><input class="setting-slider" type="range" min="0" max="100" value="100"><span class="setting-value">100%</span></div></div>
+<div class="setting-row"><div class="setting-label">Cuaca</div><div class="setting-control"><input class="setting-slider" type="range" min="0" max="100" value="100"><span class="setting-value">100%</span></div></div>
+<div class="setting-row"><div class="setting-label">Makhluk Hidup</div><div class="setting-control"><input class="setting-slider" type="range" min="0" max="100" value="100"><span class="setting-value">100%</span></div></div>
+<div class="setting-row"><div class="setting-label">Pemain</div><div class="setting-control"><input class="setting-slider" type="range" min="0" max="100" value="100"><span class="setting-value">100%</span></div></div>
 `,
   language:()=>`
 <div class="menu-section">🌐 Bahasa / Language</div>
 ${['Bahasa Indonesia','English (US)','English (UK)','Deutsch','Français','日本語','中文(简体)','한국어','Español','Português'].map(lang=>`
 <div class="setting-row"><div class="setting-label">${lang}</div><div class="setting-control"><button class="stg-btn ${settings.language===lang?'on':''}" onclick="settings.language='${lang}';refreshTab('language')">${settings.language===lang?'✓ Aktif':'Pilih'}</button></div></div>`).join('')}
+<div class="menu-section">♿ Aksesibilitas</div>
+<div class="setting-row"><div class="setting-label">Chat Text-to-Speech</div><div class="setting-control"><button class="stg-btn off">OFF</button></div></div>
+<div class="setting-row"><div class="setting-label">Subtitles</div><div class="setting-control"><button class="stg-btn off">OFF</button></div></div>
+<div class="setting-row"><div class="setting-label">High Contrast</div><div class="setting-control"><button class="stg-btn off">OFF</button></div></div>
+<div class="setting-row"><div class="setting-label">Narrator</div><div class="setting-control"><button class="stg-btn off">OFF</button></div></div>
 `,
   chat:()=>`
 <div class="menu-section">💬 Chat Settings</div>
 <div class="setting-row"><div class="setting-label">Chat Opacity</div><div class="setting-control"><input class="setting-slider" type="range" min="0" max="100" value="${settings.chatOpacity}" oninput="settings.chatOpacity=+this.value;this.nextElementSibling.textContent=this.value+'%'"><span class="setting-value">${settings.chatOpacity}%</span></div></div>
 <div class="setting-row"><div class="setting-label">Chat Scale</div><div class="setting-control"><input class="setting-slider" type="range" min="50" max="200" value="${settings.chatScale}" oninput="settings.chatScale=+this.value;this.nextElementSibling.textContent=this.value+'%'"><span class="setting-value">${settings.chatScale}%</span></div></div>
 <div class="setting-row"><div class="setting-label">Chat Visibility</div><div class="setting-control"><button class="stg-btn on">Shown</button></div></div>
+<div class="setting-row"><div class="setting-label">Chat Colors</div><div class="setting-control"><button class="stg-btn on">ON</button></div></div>
+<div class="setting-row"><div class="setting-label">Web Links</div><div class="setting-control"><button class="stg-btn on">ON</button></div></div>
+<div class="menu-section">👥 Multiplayer Settings</div>
+<div class="setting-row"><div class="setting-label">Player Nametag</div><div class="setting-control"><button class="stg-btn on">ON</button></div></div>
+<div class="setting-row"><div class="setting-label">Server Resource Pack</div><div class="setting-control"><button class="stg-btn on">Enabled</button></div></div>
+<div class="setting-row"><div class="setting-label">Realms Notif</div><div class="setting-control"><button class="stg-btn on">ON</button></div></div>
 `,
   skin:()=>`
 <div class="menu-section">👤 Skin Customization</div>
 <div style="text-align:center;margin:12px 0;"><div style="font-size:72px;">🧑</div><div style="font-family:'Press Start 2P',monospace;font-size:8px;color:#888;margin-top:6px;">Steve (Default)</div></div>
 ${[['Cape','🧣'],['Jacket','🧥'],['Left Sleeve','👕'],['Right Sleeve','👔'],['Left Pants','👖'],['Right Pants','🩲'],['Hat Layer','🎩']].map(([n,ic])=>`<div class="setting-row"><div class="setting-label">${ic} ${n}</div><div class="setting-control"><button class="stg-btn on" onclick="this.classList.toggle('on');this.classList.toggle('off');this.textContent=this.classList.contains('on')?'ON':'OFF'">ON</button></div></div>`).join('')}
+<div class="menu-section">📦 Resource Packs</div>
+<div style="font-family:'Press Start 2P',monospace;font-size:8px;color:#666;padding:8px 0;">Active: Default</div>
+<div class="setting-row"><div class="setting-label">Default Resource Pack</div><div class="setting-control"><button class="stg-btn on">Active</button></div></div>
 `,
 };
 
@@ -805,12 +759,8 @@ function applySettings(){CHUNK_RENDER_DIST=settings.renderDistance;}
 function toggleFS(){if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen();}
 
 // --- LOADING ---
-// FIX: loading guard prevents double-start if user clicks Singleplayer twice
-let isLoading=false;
 async function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
 async function startLoading(){
-  if(isLoading||gameRunning)return;
-  isLoading=true;
   showScreen('loading');
   const bar=document.getElementById('load-bar'),txt=document.getElementById('load-txt');
   const steps=[[5,'Menginisialisasi WebGL...'],[15,'Membuat seed dunia...'],[25,'Generating terrain...'],[65,'Membangun chunk 3D...'],[80,'Spawning player...'],[92,'Menyiapkan HUD...'],[100,'Selamat bermain!']];
@@ -822,12 +772,10 @@ async function startLoading(){
     if(p===92){updateHotbar();updateHB();updateFB();updateXP();}
   }
   await sleep(250);
-  gameRunning=true;isLoading=false;lastT=performance.now();
+  gameRunning=true;lastT=performance.now();
   showScreen('game');
   canvas.requestPointerLock();
-  // FIX: only start loop once — cancel any existing loop first
-  if(loopId){cancelAnimationFrame(loopId);loopId=null;}
-  loopId=requestAnimationFrame(gameLoop);
+  requestAnimationFrame(gameLoop);
 }
 
 // --- MAIN MENU BACKGROUND ---
@@ -836,24 +784,27 @@ function initMenuBg(){
   function draw(){
     mc.width=window.innerWidth;mc.height=window.innerHeight;
     const ctx=mc.getContext('2d'),w=mc.width,h=mc.height;
-    const skyg=ctx.createLinearGradient(0,0,0,h*.55);skyg.addColorStop(0,'#1a3a6b');skyg.addColorStop(1,'#4a7ab5');
-    ctx.fillStyle=skyg;ctx.fillRect(0,0,w,h*.55);
+    const sky=ctx.createLinearGradient(0,0,0,h*.55);sky.addColorStop(0,'#1a3a6b');sky.addColorStop(1,'#4a7ab5');
+    ctx.fillStyle=sky;ctx.fillRect(0,0,w,h*.55);
     const grd=ctx.createLinearGradient(0,h*.55,0,h);grd.addColorStop(0,'#3a7a1b');grd.addColorStop(1,'#1a3a0e');
     ctx.fillStyle=grd;ctx.fillRect(0,h*.55,w,h*.45);
     ctx.fillStyle='rgba(255,255,255,.7)';
     [[w*.08,h*.12,90,28],[w*.35,h*.08,130,32],[w*.65,h*.15,100,26],[w*.88,h*.1,75,22]].forEach(([x,y,cw,ch])=>{
       ctx.beginPath();ctx.ellipse(x,y,cw,ch,0,0,Math.PI*2);ctx.fill();
     });
+    // Trees
     ctx.fillStyle='#1a3a0e';
     for(let i=0;i<24;i++){
       const tx=i*(w/24)+Math.sin(i*37)*20,th=70+Math.sin(i*13)*35,ty=h*.55;
       ctx.fillRect(tx+8,ty-th,5,th);
       ctx.beginPath();ctx.moveTo(tx-18,ty-th*0.6);ctx.lineTo(tx+30,ty-th*0.6);ctx.lineTo(tx+10,ty-th*1.3);ctx.fill();
     }
+    // Distant mountains
     ctx.fillStyle='#2a5a1b';
     ctx.beginPath();ctx.moveTo(0,h*.55);
     for(let i=0;i<=w;i+=40){ctx.lineTo(i,h*.55-(Math.sin(i*.02)*60+Math.sin(i*.05)*30+40));}
     ctx.lineTo(w,h*.55);ctx.fill();
+    // Vignette
     const vig=ctx.createRadialGradient(w/2,h/2,h*.15,w/2,h/2,h);
     vig.addColorStop(0,'transparent');vig.addColorStop(1,'rgba(0,0,0,.55)');
     ctx.fillStyle=vig;ctx.fillRect(0,0,w,h);
@@ -862,6 +813,7 @@ function initMenuBg(){
 }
 initMenuBg();
 
+// Splash text
 const splashes=['Now with WebGL!','Buat rumahmu!','100% di Browser!','Dig to the bedrock!','View Bobbing ON!','Inventory penuh!','Gratis selamanya!'];
 document.getElementById('mc-splash').textContent=splashes[Math.floor(Math.random()*splashes.length)];
 </script>
